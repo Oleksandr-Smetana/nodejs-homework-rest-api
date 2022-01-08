@@ -1,18 +1,37 @@
 const express = require('express');
 const { BadRequest, NotFound } = require('http-errors');
 
-const { Contact } = require('../../model');
+const router = express.Router();
+
+const { Contact } = require('../../models');
 const {
   postJoiSchema,
   updateFavoriteJoiSchema,
-} = require('../../model/contact');
+} = require('../../models/contact');
 
-const router = express.Router();
+const { authenticate } = require('../../middlewares');
 
 // get list of contacts
-router.get('/', async (req, res, next) => {
+router.get('/', authenticate, async (req, res, next) => {
   try {
-    const contacts = await Contact.find();
+    const { page = 1, limit = 20, favorite } = req.query; // query parameters
+    const skip = (page - 1) * limit;
+    const { _id } = req.user;
+    const contacts = await Contact.find(
+      { owner: _id },
+      '-createdAt -updatedAt',
+      { skip, limit: +limit },
+    );
+
+    // get all contacts with field 'favorite=true'
+    if (favorite) {
+      const favoriteContacts = contacts.filter(
+        contact => contact.favorite,
+      );
+      res.json(favoriteContacts);
+      return;
+    }
+
     res.json(contacts);
   } catch (error) {
     next(error);
@@ -21,7 +40,7 @@ router.get('/', async (req, res, next) => {
 
 // get contact by id
 router.get('/:contactId', async (req, res, next) => {
-  const { contactId } = req.params;
+  const { contactId } = req.params; // route parameter
   try {
     const contact = await Contact.findById(contactId);
     if (!contact) {
@@ -37,13 +56,20 @@ router.get('/:contactId', async (req, res, next) => {
 });
 
 // add contact to the list
-router.post('/', async (req, res, next) => {
+router.post('/', authenticate, async (req, res, next) => {
   try {
+    // validation of fields
     const { error } = postJoiSchema.validate(req.body);
     if (error) {
       throw new BadRequest('Missing required name field');
     }
-    const contact = await Contact.create(req.body);
+
+    // adding new contact
+    const { _id } = req.user;
+    const contact = await Contact.create({
+      ...req.body,
+      owner: _id, // attaching owner's id from its request
+    });
     res.status(201).json(contact);
   } catch (error) {
     if (error.message.includes('validation failed')) {
@@ -56,10 +82,8 @@ router.post('/', async (req, res, next) => {
 // remove contact by id
 router.delete('/:contactId', async (req, res, next) => {
   try {
-    const { contactId } = req.params;
-    const deleteContact = await Contact.findByIdAndRemove(
-      contactId,
-    );
+    const { contactId } = req.params; // route parameter
+    const deleteContact = await Contact.findByIdAndRemove(contactId);
     if (!deleteContact) {
       throw new NotFound();
     }
@@ -75,7 +99,7 @@ router.delete('/:contactId', async (req, res, next) => {
 // update contact by id
 router.put('/:contactId', async (req, res, next) => {
   try {
-    const { contactId } = req.params;
+    const { contactId } = req.params; // route parameter
     const updatedContact = await Contact.findByIdAndUpdate(
       contactId,
       req.body,
@@ -94,36 +118,33 @@ router.put('/:contactId', async (req, res, next) => {
 });
 
 // update field "favorite" by contact's id
-router.patch(
-  '/:contactId/favorite',
-  async (req, res, next) => {
-    try {
-      const { error } = updateFavoriteJoiSchema.validate(
-        req.body,
-      );
-      if (error) {
-        throw new BadRequest('Missing field favorite');
-      }
-      const { contactId } = req.params;
-      const { favorite } = req.body;
-      console.log({ favorite });
-      const updateFieldFavorite =
-        await Contact.findByIdAndUpdate(
-          contactId,
-          { favorite },
-          { new: true },
-        );
-      if (!updateFieldFavorite) {
-        throw new NotFound();
-      }
-      res.json(updateFieldFavorite);
-    } catch (error) {
-      if (error.message.includes('validation failed')) {
-        error.status = 401;
-      }
-      next(error);
+router.patch('/:contactId/favorite', async (req, res, next) => {
+  try {
+    // validation of field "favorite"
+    const { error } = updateFavoriteJoiSchema.validate(req.body);
+    if (error) {
+      throw new BadRequest('Missing field favorite');
     }
-  },
-);
+
+    // updating field "favorite"
+    const { contactId } = req.params; // route parameter
+    const { favorite } = req.body;
+    console.log({ favorite });
+    const updateFieldFavorite = await Contact.findByIdAndUpdate(
+      contactId,
+      { favorite },
+      { new: true },
+    );
+    if (!updateFieldFavorite) {
+      throw new NotFound();
+    }
+    res.json(updateFieldFavorite);
+  } catch (error) {
+    if (error.message.includes('validation failed')) {
+      error.status = 401;
+    }
+    next(error);
+  }
+});
 
 module.exports = router;
