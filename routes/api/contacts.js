@@ -23,10 +23,12 @@ router.get('/', authenticate, async (req, res, next) => {
       { skip, limit: +limit },
     );
 
-    // get all contacts with field 'favorite=true'
+    // get contacts by field 'favorite'
     if (favorite) {
-      const favoriteContacts = contacts.filter(
-        contact => contact.favorite,
+      const favoriteContacts = await Contact.find(
+        { owner: _id, favorite },
+        '-createdAt -updatedAt',
+        { skip, limit: +limit },
       );
       res.json(favoriteContacts);
       return;
@@ -39,7 +41,7 @@ router.get('/', authenticate, async (req, res, next) => {
 });
 
 // get contact by id
-router.get('/:contactId', async (req, res, next) => {
+router.get('/:contactId', authenticate, async (req, res, next) => {
   const { contactId } = req.params; // route parameter
   try {
     const contact = await Contact.findById(contactId);
@@ -80,10 +82,14 @@ router.post('/', authenticate, async (req, res, next) => {
 });
 
 // remove contact by id
-router.delete('/:contactId', async (req, res, next) => {
+router.delete('/:contactId', authenticate, async (req, res, next) => {
   try {
     const { contactId } = req.params; // route parameter
-    const deleteContact = await Contact.findByIdAndRemove(contactId);
+    const { _id } = req.user;
+    const deleteContact = await Contact.findOneAndRemove({
+      contactId,
+      owner: _id,
+    });
     if (!deleteContact) {
       throw new NotFound();
     }
@@ -97,7 +103,7 @@ router.delete('/:contactId', async (req, res, next) => {
 });
 
 // update contact by id
-router.put('/:contactId', async (req, res, next) => {
+router.put('/:contactId', authenticate, async (req, res, next) => {
   try {
     const { contactId } = req.params; // route parameter
     const updatedContact = await Contact.findByIdAndUpdate(
@@ -118,33 +124,37 @@ router.put('/:contactId', async (req, res, next) => {
 });
 
 // update field "favorite" by contact's id
-router.patch('/:contactId/favorite', async (req, res, next) => {
-  try {
-    // validation of field "favorite"
-    const { error } = updateFavoriteJoiSchema.validate(req.body);
-    if (error) {
-      throw new BadRequest('Missing field favorite');
-    }
+router.patch(
+  '/:contactId/favorite',
+  authenticate,
+  async (req, res, next) => {
+    try {
+      // validation of field "favorite"
+      const { error } = updateFavoriteJoiSchema.validate(req.body);
+      if (error) {
+        throw new BadRequest('Missing field favorite');
+      }
 
-    // updating field "favorite"
-    const { contactId } = req.params; // route parameter
-    const { favorite } = req.body;
-    console.log({ favorite });
-    const updateFieldFavorite = await Contact.findByIdAndUpdate(
-      contactId,
-      { favorite },
-      { new: true },
-    );
-    if (!updateFieldFavorite) {
-      throw new NotFound();
+      // updating field "favorite"
+      const { contactId } = req.params; // route parameter
+      const { favorite } = req.body;
+
+      const updateFieldFavorite = await Contact.findByIdAndUpdate(
+        contactId,
+        { favorite },
+        { new: true },
+      );
+      if (!updateFieldFavorite) {
+        throw new NotFound();
+      }
+      res.json(updateFieldFavorite);
+    } catch (error) {
+      if (error.message.includes('validation failed')) {
+        error.status = 401;
+      }
+      next(error);
     }
-    res.json(updateFieldFavorite);
-  } catch (error) {
-    if (error.message.includes('validation failed')) {
-      error.status = 401;
-    }
-    next(error);
-  }
-});
+  },
+);
 
 module.exports = router;
