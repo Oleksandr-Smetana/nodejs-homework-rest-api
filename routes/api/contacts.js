@@ -87,7 +87,7 @@ router.delete('/:contactId', authenticate, async (req, res, next) => {
     const { contactId } = req.params; // route parameter
     const { _id } = req.user;
     const deleteContact = await Contact.findOneAndRemove({
-      contactId,
+      _id: contactId,
       owner: _id,
     });
     if (!deleteContact) {
@@ -106,8 +106,12 @@ router.delete('/:contactId', authenticate, async (req, res, next) => {
 router.put('/:contactId', authenticate, async (req, res, next) => {
   try {
     const { contactId } = req.params; // route parameter
-    const updatedContact = await Contact.findByIdAndUpdate(
-      contactId,
+    const { _id } = req.user;
+    const updatedContact = await Contact.findOneAndUpdate(
+      {
+        _id: contactId,
+        owner: _id,
+      },
       req.body,
       { new: true },
     );
@@ -138,9 +142,12 @@ router.patch(
       // updating field "favorite"
       const { contactId } = req.params; // route parameter
       const { favorite } = req.body;
-
-      const updateFieldFavorite = await Contact.findByIdAndUpdate(
-        contactId,
+      const { _id } = req.user;
+      const updateFieldFavorite = await Contact.findOneAndUpdate(
+        {
+          _id: contactId,
+          owner: _id,
+        },
         { favorite },
         { new: true },
       );
